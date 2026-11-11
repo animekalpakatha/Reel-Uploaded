@@ -89,7 +89,22 @@ def ig_page_token(ig_id, token):
     raise RuntimeError(f"No Facebook Page linked to Instagram {ig_id} (pages seen: {[p.get('name') for p in pages]})")
 
 
+def instagram_copy(video):
+    out = video.with_name(video.stem + "_ig.mp4")
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
+            "-c:v", "libx264", "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
+            "-b:v", "8M", "-maxrate", "10M", "-bufsize", "16M",
+            "-r", "30", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", str(out),
+        ], check=True)
+    return out
+
+
 def post_instagram(video, meta):
+    video = instagram_copy(video)
     ig_id = os.environ["IG_USER_ID"]
     token, page = ig_page_token(ig_id, os.environ["IG_TOKEN"])
     log(f"Instagram using Page token: {page}")
