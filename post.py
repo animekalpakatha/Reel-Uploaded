@@ -117,12 +117,13 @@ def post_instagram(video, meta):
     }, timeout=60), "container")
     cid = c["id"]
     upload_url = c.get("uri") or f"{RUPLOAD}/{cid}"
-    with open(video, "rb") as f:
-        check(requests.post(upload_url, headers={
-            "Authorization": f"OAuth {token}",
-            "offset": "0",
-            "file_size": str(video.stat().st_size),
-        }, data=f, timeout=1800), "upload")
+    subprocess.run(["gh", "release", "upload", RELEASE_TAG, str(video), "--clobber"], check=True)
+    public_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{RELEASE_TAG}/{video.name}"
+    log(f"Instagram fetching from: {public_url}")
+    check(requests.post(upload_url, headers={
+        "Authorization": f"OAuth {token}",
+        "file_url": public_url,
+    }, timeout=300), "upload")
     for _ in range(90):
         s = check(requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code,status", "access_token": token}, timeout=60), "status")
         code = s.get("status_code")
