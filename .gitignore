@@ -1,0 +1,4 @@
+*.mp4
+videos/
+secrets/
+__pycache__/
