@@ -108,22 +108,18 @@ def post_instagram(video, meta):
     ig_id = os.environ["IG_USER_ID"]
     token, page = ig_page_token(ig_id, os.environ["IG_TOKEN"])
     log(f"Instagram using Page token: {page}")
+    subprocess.run(["gh", "release", "upload", RELEASE_TAG, str(video), "--clobber"], check=True)
+    public_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{RELEASE_TAG}/{video.name}"
+    direct_url = requests.head(public_url, allow_redirects=True, timeout=60).url
+    log(f"Instagram fetching from: {public_url}")
     c = check(requests.post(f"{GRAPH}/{ig_id}/media", data={
         "media_type": "REELS",
-        "upload_type": "resumable",
+        "video_url": direct_url,
         "caption": meta["caption"],
         "share_to_feed": "true",
         "access_token": token,
-    }, timeout=60), "container")
+    }, timeout=120), "container")
     cid = c["id"]
-    upload_url = c.get("uri") or f"{RUPLOAD}/{cid}"
-    subprocess.run(["gh", "release", "upload", RELEASE_TAG, str(video), "--clobber"], check=True)
-    public_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{RELEASE_TAG}/{video.name}"
-    log(f"Instagram fetching from: {public_url}")
-    check(requests.post(upload_url, headers={
-        "Authorization": f"OAuth {token}",
-        "file_url": public_url,
-    }, timeout=300), "upload")
     for _ in range(90):
         s = check(requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code,status", "access_token": token}, timeout=60), "status")
         code = s.get("status_code")
@@ -131,6 +127,7 @@ def post_instagram(video, meta):
             break
         if code in ("ERROR", "EXPIRED"):
             raise RuntimeError(f"Instagram processing failed: {s}")
+        log(f"Instagram processing: {code}")
         time.sleep(10)
     else:
         raise RuntimeError("Instagram processing timed out")
