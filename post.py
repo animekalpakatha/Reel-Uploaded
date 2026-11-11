@@ -74,30 +74,42 @@ def post_youtube(video, meta):
     return resp["id"], resp.get("status", {}).get("privacyStatus", "?")
 
 
-def check(r):
+def check(r, step=""):
     if r.status_code >= 400:
-        raise RuntimeError(f"Instagram {r.status_code}: {r.text[:500]}")
+        raise RuntimeError(f"Instagram {step} {r.status_code}: {r.text[:500]}")
     return r.json()
 
 
+def ig_page_token(ig_id, token):
+    r = requests.get(f"{GRAPH}/me/accounts", params={"fields": "name,access_token,instagram_business_account", "access_token": token}, timeout=60)
+    pages = check(r, "page lookup").get("data", [])
+    for p in pages:
+        if p.get("instagram_business_account", {}).get("id") == ig_id:
+            return p["access_token"], p.get("name")
+    raise RuntimeError(f"No Facebook Page linked to Instagram {ig_id} (pages seen: {[p.get('name') for p in pages]})")
+
+
 def post_instagram(video, meta):
-    ig_id, token = os.environ["IG_USER_ID"], os.environ["IG_TOKEN"]
+    ig_id = os.environ["IG_USER_ID"]
+    token, page = ig_page_token(ig_id, os.environ["IG_TOKEN"])
+    log(f"Instagram using Page token: {page}")
     c = check(requests.post(f"{GRAPH}/{ig_id}/media", data={
         "media_type": "REELS",
         "upload_type": "resumable",
         "caption": meta["caption"],
         "share_to_feed": "true",
         "access_token": token,
-    }, timeout=60))
+    }, timeout=60), "container")
     cid = c["id"]
+    upload_url = c.get("uri") or f"{RUPLOAD}/{cid}"
     with open(video, "rb") as f:
-        check(requests.post(f"{RUPLOAD}/{cid}", headers={
+        check(requests.post(upload_url, headers={
             "Authorization": f"OAuth {token}",
             "offset": "0",
             "file_size": str(video.stat().st_size),
-        }, data=f, timeout=1800))
+        }, data=f, timeout=1800), "upload")
     for _ in range(90):
-        s = check(requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code,status", "access_token": token}, timeout=60))
+        s = check(requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code,status", "access_token": token}, timeout=60), "status")
         code = s.get("status_code")
         if code == "FINISHED":
             break
@@ -106,7 +118,7 @@ def post_instagram(video, meta):
         time.sleep(10)
     else:
         raise RuntimeError("Instagram processing timed out")
-    p = check(requests.post(f"{GRAPH}/{ig_id}/media_publish", data={"creation_id": cid, "access_token": token}, timeout=60))
+    p = check(requests.post(f"{GRAPH}/{ig_id}/media_publish", data={"creation_id": cid, "access_token": token}, timeout=60), "publish")
     return p["id"]
 
 
